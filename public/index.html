@@ -82,6 +82,42 @@
   </menu>
 </dialog>
 
+<!-- 重剪重排对话框 -->
+<dialog id="dlgRecut">
+  <h3>重剪重排（按原稿来源序号区间）</h3>
+  <div class="dlg-body">
+    <p class="meta">
+      选择一段<b>连续的原稿来源序号区间</b>，并填写该区间在新版视频中的起止时码：
+      区间内完整片段保持相对位置等比重排，区间之后的片段整体平移（平移量 = 新区间终点 − 原区间终点），区间之前不动。
+      同一来源拆出的片段会一起处理；跨越选择边界的合并片段将被拒绝。
+    </p>
+    <div class="recut-form">
+      <label>来源起始序号
+        <input type="number" id="rcLo" min="1" step="1" placeholder="如 2">
+      </label>
+      <label>来源结束序号
+        <input type="number" id="rcHi" min="1" step="1" placeholder="如 3">
+      </label>
+      <label>新区间起点 HH:MM:SS,mmm
+        <input type="text" id="rcStart" placeholder="00:00:05,000">
+      </label>
+      <label>新区间终点 HH:MM:SS,mmm
+        <input type="text" id="rcEnd" placeholder="00:00:08,000">
+      </label>
+    </div>
+    <div class="recut-actions">
+      <button type="button" id="recutPreview" class="primary">生成预览</button>
+      <span id="recutHint" class="meta"></span>
+    </div>
+    <div id="recutErrors" class="error-box" hidden></div>
+    <div id="recutResult"></div>
+  </div>
+  <menu>
+    <button type="button" id="recutCancel">关闭</button>
+    <button type="button" class="primary" id="recutSubmit" disabled>确认提交（整体成功或不改动）</button>
+  </menu>
+</dialog>
+
 <!-- 质检规则对话框 -->
 <dialog id="dlgQcRules">
   <h3>放映质检规则</h3>

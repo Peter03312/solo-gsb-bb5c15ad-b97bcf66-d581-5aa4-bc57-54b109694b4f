@@ -149,6 +149,7 @@ function renderEditor() {
       <button id="btnRename">重命名</button>
       <span class="spacer"></span>
       <button id="btnValidate">导出前检查</button>
+      <button id="btnRecut">重剪重排</button>
       <button id="btnResetAll">整条重置为原稿</button>
       <a class="btn" id="btnExport" href="/api/branches/${b.id}/export" download>导出 SRT</a>
     </div>
@@ -190,6 +191,7 @@ function renderEditor() {
 
   $('#btnRename').onclick = renameBranch;
   $('#btnValidate').onclick = runValidate;
+  $('#btnRecut').onclick = openRecutDialog;
   $('#btnResetAll').onclick = resetAll;
   $('#btnExport').onclick = (e) => {
     // 导出失败时服务器返回 409 JSON，阻止浏览器直接打开错误页
@@ -487,6 +489,125 @@ $('#mergeSubmit').onclick = async () => {
     await openScript(state.script.id);
     await selectBranch(result.id);
   } catch (e) { toast(e.message, 'error'); }
+};
+
+// ---------------- 重剪重排 ----------------
+
+const recutState = { preview: null };
+
+function openRecutDialog() {
+  recutState.preview = null;
+  $('#rcLo').value = '';
+  $('#rcHi').value = '';
+  $('#rcStart').value = '';
+  $('#rcEnd').value = '';
+  $('#recutErrors').hidden = true;
+  $('#recutErrors').innerHTML = '';
+  $('#recutResult').innerHTML = '';
+  $('#recutHint').textContent = '';
+  $('#recutSubmit').disabled = true;
+  $('#dlgRecut').showModal();
+}
+$('#recutCancel').onclick = () => $('#dlgRecut').close();
+
+function showRecutErrors(err) {
+  const box = $('#recutErrors');
+  const errs = (err.data && (err.data.recut_errors || err.data.errors)) || [];
+  box.innerHTML = `<div><b>${esc(err.message)}</b></div>` +
+    (errs.length ? `<ul class="issue-list">${errs.map((x) =>
+      `<li>${x.ord ? `<span class="e-line">片段 #${x.ord}：</span>` : ''}${esc(x.message)}</li>`).join('')}</ul>` : '');
+  box.hidden = false;
+}
+
+$('#recutPreview').onclick = async () => {
+  const body = {
+    source_start: $('#rcLo').value.trim(),
+    source_end: $('#rcHi').value.trim(),
+    new_start: $('#rcStart').value.trim(),
+    new_end: $('#rcEnd').value.trim()
+  };
+  $('#recutErrors').hidden = true;
+  try {
+    const p = await api(`/api/branches/${state.branchId}/recut/preview`, { method: 'POST', body });
+    recutState.preview = p;
+    renderRecutPreview(p);
+  } catch (e) {
+    recutState.preview = null;
+    $('#recutResult').innerHTML = '';
+    $('#recutSubmit').disabled = true;
+    showRecutErrors(e);
+  }
+};
+
+function renderRecutPreview(p) {
+  $('#recutErrors').hidden = true;
+  const shiftText = `${p.shift_ms >= 0 ? '+' : '−'}${(Math.abs(p.shift_ms) / 1000).toFixed(3)} 秒`;
+  let html = `
+    <div class="recut-summary">
+      来源区间 <b>#${p.source_start}–#${p.source_end}</b>：
+      原时间 ${p.old_range.timecode} → 新时间 <b>${p.new_range.timecode}</b>；
+      等比系数 ${p.scale_ratio}，区间后整体平移 <b>${shiftText}</b>。
+      受影响片段共 <b>${p.affected.length}</b> 条（区间内 ${p.counts.inside}、区间后 ${p.counts.after}），
+      其中时码实际变化 <b>${p.counts.changed}</b> 条；区间前 ${p.counts.before} 条不动。
+    </div>`;
+
+  if (!p.can_apply) {
+    const allErr = [
+      ...p.errors.map((x) => ({ kind: '换算问题', x })),
+      ...p.timeline_issues.map((x) => ({ kind: '时间线问题', x }))
+    ];
+    html += `<div class="qc-banner bad">✗ 存在 ${allErr.length} 处问题，确认按钮已禁用（提交会被整体拒绝）：
+      <ul class="issue-list">${allErr.map(({ kind, x }) =>
+        `<li><span class="e-line">${kind}${x.ord ? ` #${x.ord}` : ''}：</span>${esc(x.message)}</li>`).join('')}</ul></div>`;
+  } else {
+    html += '<div class="qc-banner ok">✓ 换算与时间线校验通过，可以确认。确认前请核对下方每条受影响片段的新旧时码。</div>';
+  }
+
+  const rows = p.affected.map((a) => `
+    <tr class="${a.time_changed ? '' : 'unchanged'}">
+      <td class="col-ord">${a.ord}</td>
+      <td>
+        ${(a.source_seqs || []).map((q) => `<span class="src-tag">原稿 #${q}</span>`).join('')}
+        <div class="meta">${a.role === 'inside' ? '区间内（等比重排）' : '区间后（整体平移）'}</div>
+      </td>
+      <td class="tc-cell">${a.old_timecode}</td>
+      <td class="tc-cell ${a.time_changed ? 'tc-new' : ''}">${a.new_timecode}</td>
+      <td>${a.time_changed ? '<span class="changed-dot">时码变化</span>' : '<span class="meta">实际未变</span>'}</td>
+    </tr>`).join('');
+  html += `<table class="qc-table"><thead><tr>
+      <th class="col-ord">片段#</th><th>来源 / 角色</th><th>旧时码</th><th>新时码</th><th>状态</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div class="meta">预览后若该分支被编辑、拆分、合并或重置，提交将被拒绝并要求重新预览。</div>`;
+
+  $('#recutResult').innerHTML = html;
+  $('#recutHint').textContent = p.can_apply ? '预览已生成且校验通过' : '预览已生成，但存在问题';
+  $('#recutSubmit').disabled = !p.can_apply;
+}
+
+$('#recutSubmit').onclick = async () => {
+  const p = recutState.preview;
+  if (!p || !p.can_apply) return;
+  try {
+    const result = await api(`/api/branches/${state.branchId}/recut/apply`, {
+      method: 'POST',
+      body: {
+        source_start: p.source_start,
+        source_end: p.source_end,
+        new_start: p.new_range.start_ms,
+        new_end: p.new_range.end_ms,
+        token: p.token
+      }
+    });
+    $('#dlgRecut').close();
+    toast(`重排已提交：${result.counts.changed} 条片段时码更新（受影响 ${result.affected.length} 条）`, 'ok');
+    await selectBranch(state.branchId);
+  } catch (e) {
+    recutState.preview = null;
+    $('#recutSubmit').disabled = true;
+    $('#recutResult').innerHTML = '';
+    showRecutErrors(e);
+    if (e.data && e.data.preview_stale) toast('请重新预览后再提交', 'error');
+  }
 };
 
 // ---------------- 放映质检 ----------------

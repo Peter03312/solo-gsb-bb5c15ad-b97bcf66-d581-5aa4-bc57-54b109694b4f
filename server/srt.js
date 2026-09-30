@@ -155,12 +155,12 @@ function validateTimeline(segments) {
       issues.push({ ord, message: `时间不能为负（${msToSrt(Math.max(0, s.start_ms || 0))} --> ${msToSrt(Math.max(0, s.end_ms || 0))}）` });
     }
     if (s.start_ms >= s.end_ms) {
-      issues.push({ ord, message: `起点必须早于终点（${msToSrt(s.start_ms)} --> ${msToSrt(s.end_ms)}）` });
+      issues.push({ ord, message: `起点必须早于终点（${msToSrt(Math.max(0, s.start_ms))} --> ${msToSrt(Math.max(0, s.end_ms))}）` });
     }
     if (s.start_ms < prevEnd) {
       issues.push({
         ord,
-        message: `与上一片段时间重叠（上一片段终点 ${msToSrt(prevEnd)}，本片段起点 ${msToSrt(s.start_ms)}）`
+        message: `与上一片段时间重叠（上一片段终点 ${msToSrt(Math.max(0, prevEnd))}，本片段起点 ${msToSrt(Math.max(0, s.start_ms))}）`
       });
     }
     if (s.start_ms < s.end_ms && s.start_ms >= prevEnd) {

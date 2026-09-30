@@ -269,3 +269,32 @@ table.qc-table { width: 100%; border-collapse: collapse; border: 1px solid var(-
 #dlgQcRules .qc-form label { color: var(--muted); font-size: 12px; margin: 0; }
 #dlgQcRules .qc-form label.full { grid-column: 1 / -1; }
 #dlgQcRules .qc-form input, #dlgQcRules .qc-form textarea { margin-top: 6px; }
+
+/* ---------------- 重剪重排 ---------------- */
+#dlgRecut { width: 880px; }
+#dlgRecut .dlg-body { padding: 16px 20px; max-height: 70vh; overflow-y: auto; }
+.recut-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  margin: 12px 0;
+}
+.recut-form label { color: var(--muted); font-size: 12px; margin: 0; }
+.recut-form input { margin-top: 6px; font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+.recut-actions { display: flex; align-items: center; gap: 12px; }
+.recut-summary {
+  margin: 6px 0 12px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+#recutResult .qc-table .tc-cell {
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+#recutResult .qc-table tr.unchanged td { opacity: .7; }
+#recutResult .qc-table .tc-new { color: #9db8ff; }

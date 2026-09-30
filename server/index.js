@@ -8,6 +8,7 @@ const db = require('./db');
 const { parseSrt, validateTimeline, toSrt, msToSrt } = require('./srt');
 const { previewMerge, applyMerge, getBranchSegments } = require('./merge');
 const qc = require('./qc');
+const recut = require('./recut');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -415,6 +416,34 @@ app.post('/api/merge/apply', (req, res, next) => {
   }
 });
 
+// ---------------- 重剪重排 ----------------
+
+// 预览：选择连续来源序号区间并指定其在新版视频中的起止时码，
+// 返回每条受影响片段的新旧时码、换算问题、时间线问题与一次性预览令牌。
+app.post('/api/branches/:id/recut/preview', (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    getBranchOr404(id);
+    const preview = recut.previewRecut(db, id, req.body || {}, getBranchSegments);
+    res.json(preview);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// 确认提交：令牌须与当前分支状态及参数一致，否则 409 要求重新预览；
+// 单事务写库，整体成功或不改动，仅时码实际变化的片段推进 rev。
+app.post('/api/branches/:id/recut/apply', (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    getBranchOr404(id);
+    const result = recut.applyRecut(db, id, req.body || {}, getBranchSegments);
+    res.json(result);
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ---------------- 导出 ----------------
 
 // 导出前检查
@@ -586,7 +615,9 @@ app.use((err, req, res, next) => {
     ...(err.timeline_issues ? { timeline_issues: err.timeline_issues } : {}),
     ...(err.unresolved_hits ? { unresolved_hits: err.unresolved_hits } : {}),
     ...(err.invalid_exemptions ? { invalid_exemptions: err.invalid_exemptions } : {}),
-    ...(err.report_stale != null ? { report_stale: err.report_stale } : {})
+    ...(err.report_stale != null ? { report_stale: err.report_stale } : {}),
+    ...(err.recut_errors ? { recut_errors: err.recut_errors } : {}),
+    ...(err.preview_stale != null ? { preview_stale: err.preview_stale } : {})
   });
 });
 
