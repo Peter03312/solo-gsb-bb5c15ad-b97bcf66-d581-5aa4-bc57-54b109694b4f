@@ -8,6 +8,7 @@ const db = require('./db');
 const { parseSrt, validateTimeline, toSrt, msToSrt } = require('./srt');
 const { previewMerge, applyMerge, getBranchSegments } = require('./merge');
 const qc = require('./qc');
+const remap = require('./remap');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -415,6 +416,33 @@ app.post('/api/merge/apply', (req, res, next) => {
   }
 });
 
+// ---------------- 区间时码重排（重剪视频） ----------------
+
+// 预览：选择连续来源序号区间 + 新区间起止时码，返回受影响片段新旧时码与时间线问题（不写库）
+app.post('/api/branches/:id/remap/preview', (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    getBranchOr404(id);
+    const plan = remap.buildPlan(db, id, req.body || {});
+    res.json(plan);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// 确认提交：必须携带预览令牌；预览后分支被编辑/拆分/合并/重置则 409 拒绝，要求重新预览。
+// 提交整体成功或不改动。
+app.post('/api/branches/:id/remap/commit', (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    getBranchOr404(id);
+    const result = remap.commitRemap(db, id, req.body || {});
+    res.json(result);
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ---------------- 导出 ----------------
 
 // 导出前检查
@@ -586,7 +614,9 @@ app.use((err, req, res, next) => {
     ...(err.timeline_issues ? { timeline_issues: err.timeline_issues } : {}),
     ...(err.unresolved_hits ? { unresolved_hits: err.unresolved_hits } : {}),
     ...(err.invalid_exemptions ? { invalid_exemptions: err.invalid_exemptions } : {}),
-    ...(err.report_stale != null ? { report_stale: err.report_stale } : {})
+    ...(err.report_stale != null ? { report_stale: err.report_stale } : {}),
+    ...(err.remap_errors ? { remap_errors: err.remap_errors } : {}),
+    ...(err.preview_stale != null ? { preview_stale: err.preview_stale } : {})
   });
 });
 

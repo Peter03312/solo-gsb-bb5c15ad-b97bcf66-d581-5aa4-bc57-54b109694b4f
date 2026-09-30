@@ -259,13 +259,24 @@ table.qc-table { width: 100%; border-collapse: collapse; border: 1px solid var(-
 .link-btn:hover { color: #bcd8ff; border-color: transparent; }
 
 #dlgQcRules { width: 560px; }
-#dlgQcRules .dlg-body { padding: 16px 20px; }
-#dlgQcRules .qc-form {
+#dlgQcRules .dlg-body, #dlgRemap .dlg-body { padding: 16px 20px; }
+#dlgQcRules .qc-form, #dlgRemap .qc-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px 16px;
   margin: 12px 0;
 }
-#dlgQcRules .qc-form label { color: var(--muted); font-size: 12px; margin: 0; }
+#dlgQcRules .qc-form label, #dlgRemap .qc-form label { color: var(--muted); font-size: 12px; margin: 0; }
 #dlgQcRules .qc-form label.full { grid-column: 1 / -1; }
-#dlgQcRules .qc-form input, #dlgQcRules .qc-form textarea { margin-top: 6px; }
+#dlgQcRules .qc-form input, #dlgQcRules .qc-form textarea,
+#dlgRemap .qc-form input { margin-top: 6px; }
+
+#dlgRemap { width: 820px; }
+#dlgRemap .tc-input { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
+.rm-actions { display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
+.rm-actions #rmSpan { line-height: 1.6; }
+#rmResult { max-height: 52vh; overflow-y: auto; margin-top: 8px; }
+.rm-table .col-tc { width: 200px; font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
+.rm-table .col-arrow { width: 28px; color: var(--muted); text-align: center; }
+tr.rm-same td { opacity: .7; }
+tr.rm-after .col-rule .meta { color: var(--warn); }

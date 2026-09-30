@@ -19,6 +19,21 @@ function msToSrt(ms) {
   return `${pad2(h)}:${pad2(m)}:${pad2(s)},${pad3(x)}`;
 }
 
+/**
+ * 解析单个时间码（HH:MM:SS,mmm 或 HH:MM:SS.mmm），返回非负整数毫秒；非法返回 null。
+ */
+function parseTimecode(str) {
+  if (typeof str !== 'string') return null;
+  const m = /^(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})$/.exec(str.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mm = Number(m[2]);
+  const ss = Number(m[3]);
+  const xxx = Number(m[4]);
+  if (mm > 59 || ss > 59) return null;
+  return h * 3600000 + mm * 60000 + ss * 1000 + xxx;
+}
+
 function parseTime(str) {
   const m = TIME_RE.exec(str);
   if (!m) return null;
@@ -183,4 +198,4 @@ function toSrt(segments) {
   }).join('\n\n') + '\n';
 }
 
-module.exports = { parseSrt, validateTimeline, toSrt, msToSrt, parseTime };
+module.exports = { parseSrt, validateTimeline, toSrt, msToSrt, parseTime, parseTimecode };

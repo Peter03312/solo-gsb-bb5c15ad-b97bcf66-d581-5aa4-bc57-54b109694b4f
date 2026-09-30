@@ -1,0 +1,77 @@
+# 区间时码重排（重剪视频）HTTP API 调用示例
+#
+# 约定：
+#   BASE=http://localhost:3000
+#   所有接口均为 JSON；时码端点可传「非负整数毫秒」或 "HH:MM:SS,mmm" 字符串。
+#   流程：导入 SRT -> 取分支 id -> 预览（拿 preview_token）-> 凭令牌确认提交。
+
+BASE=${BASE:-http://localhost:3000}
+
+# 0) 导入一份 SRT，自动建立两条修订分支
+curl -s -X POST "$BASE/api/scripts" \
+  -F "file=@examples/sample.srt" \
+  -F "name=重剪示例"
+# -> {"id":1,"name":"重剪示例","segment_count":4}
+
+# 0.1) 取分支 id（修订分支 A/B，合并分支 kind=merged 同样适用）
+curl -s "$BASE/api/scripts/1"
+# -> branches[0].id = 1（修订分支 A）
+
+# 1) 预览：把来源片段 #2–#3 在当前分支时间线上的外边界
+#    （00:00:03,600 --> 00:00:09,000）重排为 00:00:05,000 --> 00:00:11,000。
+#    区间内片段等比重排，#4 及以后按 +2000ms 整体平移，#1 不动。
+curl -s -X POST "$BASE/api/branches/1/remap/preview" \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "source_start": 2,
+        "source_end": 3,
+        "new_start_ms": "00:00:05,000",
+        "new_end_ms":   "00:00:11,000"
+      }'
+# 关键字段：
+#   can_commit       时间线是否可提交（issues 为空时为 true）
+#   preview_token    一次性预览令牌（64 位 hex），确认时原样回传
+#   scale            区间内等比缩放比
+#   shift_after_ms   区间后片段平移量（= 新区间终点 - 原区间终点）
+#   affected[]       每条受影响片段：ord/source_seqs/group(old=range|after)
+#                    /old_timecode/new_timecode/delta_start_ms/delta_end_ms/changed
+#   issues[]         换算后整条时间线的问题（负时码/零时长/重叠，含 segment_group 与原因）
+
+# 2) 确认提交（把上一步 preview_token 原样带回；参数必须与预览完全一致）
+curl -s -X POST "$BASE/api/branches/1/remap/commit" \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "source_start": 2,
+        "source_end": 3,
+        "new_start_ms": "00:00:05,000",
+        "new_end_ms":   "00:00:11,000",
+        "preview_token": "<上一步返回的 preview_token>"
+      }'
+# 成功：{"ok":true,"branch_id":1,"affected_count":3,"changed_count":3,
+#        "shift_after_ms":2000,"new_timecode":"00:00:05,000 --> 00:00:11,000"}
+# 提交为事务：任何校验不过都不会改动分支。
+
+# 3) 预览后若该分支被编辑 / 拆分 / 合并 / 重置，旧令牌提交被拒绝：
+#    HTTP 409 {"error":"预览已失效……请重新预览后再提交","preview_stale":true}
+
+# 4) 典型拒绝场景（均为 400，不写库；结构问题在 remap_errors[]）：
+#    无效区间（start>end / 超出原稿条数）
+curl -s -X POST "$BASE/api/branches/1/remap/preview" -H 'Content-Type: application/json' \
+  -d '{"source_start":3,"source_end":2,"new_start_ms":0,"new_end_ms":1000}'
+#    负时码 / 新区间非正时长
+curl -s -X POST "$BASE/api/branches/1/remap/preview" -H 'Content-Type: application/json' \
+  -d '{"source_start":1,"source_end":1,"new_start_ms":-500,"new_end_ms":1000}'
+#    跨越选择边界的合并片段（先在分支上拆分该片段再重排）
+curl -s -X POST "$BASE/api/branches/1/remap/preview" -H 'Content-Type: application/json' \
+  -d '{"source_start":2,"source_end":2,"new_start_ms":5000,"new_end_ms":8000}'
+
+# 5) 换算后片段时长为零 / 与相邻片段重叠：预览返回 200 且 can_commit=false（issues[] 列明原因），
+#    对应提交返回 409 并附 issues[]，分支不改动。
+curl -s -X POST "$BASE/api/branches/1/remap/preview" -H 'Content-Type: application/json' \
+  -d '{"source_start":1,"source_end":4,"new_start_ms":0,"new_end_ms":1}'
+
+# 6) 与质检联动（无需额外操作）：提交后时码实际变化的片段 rev+1，其旧豁免失效；
+#    旧质检报告因状态指纹变化自动标记 state_changed，请重新生成报告后再豁免/导出：
+curl -s -X POST "$BASE/api/branches/1/qc/reports"
+curl -s "$BASE/api/branches/1/qc/reports/latest"
+# 时码未变的片段（区间前片段、平移量为 0 的区间后片段）rev 不变，旧豁免继续有效。

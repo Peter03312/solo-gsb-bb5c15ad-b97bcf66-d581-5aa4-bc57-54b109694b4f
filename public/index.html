@@ -82,6 +82,38 @@
   </menu>
 </dialog>
 
+<!-- 区间时码重排对话框（重剪视频） -->
+<dialog id="dlgRemap">
+  <h3>重剪视频 · 区间时码重排</h3>
+  <div class="dlg-body">
+    <p class="meta">选择连续的原稿来源序号区间并填写其在新版视频中的起止时码：区间内片段按原相对位置等比重排，区间之后的片段整体平移，之前的片段不动。跨边界的合并片段会被拒绝。</p>
+    <div class="qc-form">
+      <label>来源起始序号
+        <input type="text" id="rmLo" inputmode="numeric" placeholder="如 2">
+      </label>
+      <label>来源结束序号
+        <input type="text" id="rmHi" inputmode="numeric" placeholder="如 3">
+      </label>
+      <label>新区间起点（HH:MM:SS,mmm）
+        <input type="text" id="rmStart" class="tc-input" placeholder="00:00:05,000">
+      </label>
+      <label>新区间终点（HH:MM:SS,mmm）
+        <input type="text" id="rmEnd" class="tc-input" placeholder="00:00:10,000">
+      </label>
+    </div>
+    <div class="rm-actions">
+      <button type="button" id="rmPreview" class="primary">生成预览</button>
+      <span id="rmSpan" class="meta"></span>
+    </div>
+    <div id="rmErrors" class="error-box" hidden></div>
+    <div id="rmResult"></div>
+  </div>
+  <menu>
+    <button type="button" id="rmCancel">取消</button>
+    <button type="button" class="primary" id="rmCommit" disabled>确认提交</button>
+  </menu>
+</dialog>
+
 <!-- 质检规则对话框 -->
 <dialog id="dlgQcRules">
   <h3>放映质检规则</h3>

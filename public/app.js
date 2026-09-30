@@ -149,6 +149,7 @@ function renderEditor() {
       <button id="btnRename">重命名</button>
       <span class="spacer"></span>
       <button id="btnValidate">导出前检查</button>
+      <button id="btnRemap">重剪区间时码重排</button>
       <button id="btnResetAll">整条重置为原稿</button>
       <a class="btn" id="btnExport" href="/api/branches/${b.id}/export" download>导出 SRT</a>
     </div>
@@ -191,6 +192,7 @@ function renderEditor() {
   $('#btnRename').onclick = renameBranch;
   $('#btnValidate').onclick = runValidate;
   $('#btnResetAll').onclick = resetAll;
+  $('#btnRemap').onclick = openRemapDialog;
   $('#btnExport').onclick = (e) => {
     // 导出失败时服务器返回 409 JSON，阻止浏览器直接打开错误页
     e.preventDefault();
@@ -586,7 +588,7 @@ function renderQcPanel() {
     const changed = r.state_changed;
     const rulesChanged = !r.rules_current;
     if (changed) {
-      html += '<div class="qc-banner bad">⚠ 分支内容已在报告生成后发生变化（编辑/拆分/合并）。旧结果不得沿用，请重新生成质检报告。</div>';
+      html += '<div class="qc-banner bad">⚠ 分支内容已在报告生成后发生变化（编辑/拆分/合并/区间重排）。旧结果不得沿用，请重新生成质检报告。</div>';
     } else if (rulesChanged) {
       html += `<div class="qc-banner bad">⚠ 质检规则已更新到新版本，本报告基于规则 v${r.rule_version.version_no}，请重新生成质检报告。</div>`;
     } else {
@@ -732,6 +734,131 @@ async function qcExport() {
     toast(e.message, 'error');
   }
 }
+
+// ---------------- 区间时码重排（重剪视频） ----------------
+
+const remapState = { plan: null };
+
+function openRemapDialog() {
+  remapState.plan = null;
+  $('#rmLo').value = '';
+  $('#rmHi').value = '';
+  $('#rmStart').value = '';
+  $('#rmEnd').value = '';
+  $('#rmSpan').textContent = '';
+  $('#rmErrors').hidden = true;
+  $('#rmErrors').innerHTML = '';
+  $('#rmResult').innerHTML = '';
+  $('#rmCommit').disabled = true;
+  $('#dlgRemap').showModal();
+}
+$('#rmCancel').onclick = () => $('#dlgRemap').close();
+
+$('#rmPreview').onclick = async () => {
+  const lo = Number($('#rmLo').value.trim());
+  const hi = Number($('#rmHi').value.trim());
+  const start = tcToMs($('#rmStart').value);
+  const end = tcToMs($('#rmEnd').value);
+  if (!Number.isInteger(lo) || !Number.isInteger(hi)) {
+    return showRemapErrors(['来源起始/结束序号必须为正整数']);
+  }
+  if (Number.isNaN(start) || Number.isNaN(end)) {
+    return showRemapErrors(['新区间起止时码格式应为 HH:MM:SS,mmm']);
+  }
+  try {
+    const plan = await api(`/api/branches/${state.branchId}/remap/preview`, {
+      method: 'POST',
+      body: { source_start: lo, source_end: hi, new_start_ms: start, new_end_ms: end }
+    });
+    remapState.plan = plan;
+    renderRemapResult(plan);
+  } catch (e) {
+    remapState.plan = null;
+    $('#rmResult').innerHTML = '';
+    $('#rmCommit').disabled = true;
+    const errs = (e.data && (e.data.remap_errors || (e.data.issues || []).map((i) => ({ message: `${i.ord ? `片段 #${i.ord}：` : ''}${i.message}` })))) || [];
+    showRemapErrors(errs.length ? errs.map((x) => x.message) : [e.message]);
+  }
+};
+
+function showRemapErrors(messages) {
+  const box = $('#rmErrors');
+  box.innerHTML = `<ul class="issue-list">${messages.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>`;
+  box.hidden = false;
+}
+
+function renderRemapResult(p) {
+  $('#rmErrors').hidden = true;
+  const c = p.counts;
+  const shiftText = p.shift_after_ms === 0
+    ? '区间后片段不平移'
+    : `区间后 ${c.after} 条片段整体平移 ${(p.shift_after_ms / 1000).toFixed(3)} 秒（${p.shift_after_ms > 0 ? '后移' : '前移'}）`;
+  $('#rmSpan').innerHTML =
+    `原区间 <b>${esc(p.old_timecode)}</b> → 新区间 <b>${esc(p.new_timecode)}</b>，缩放比 ${p.scale}；${shiftText}。` +
+    `受影响 ${c.affected} 条，其中时码实际变化 <b>${c.changed}</b> 条；区间前 ${c.before} 条不动。`;
+
+  let html = '';
+  if (p.issues.length) {
+    html += `<div class="qc-banner bad">发现 ${p.issues.length} 处时间线问题，<b>无法提交</b>（提交也会被服务器整体拒绝，不改动任何数据）：</div>
+      <ul class="issue-list">${p.issues.map((i) =>
+        `<li>${i.ord ? `片段 #${i.ord}：` : ''}${esc(i.message)}</li>`).join('')}</ul>`;
+  } else {
+    html += '<div class="qc-banner ok">✓ 时间线校验通过：无负时码、无零时长、无重叠，可以提交。</div>';
+  }
+
+  const rows = p.affected.map((a) => `
+    <tr class="rm-row rm-${a.group}${a.changed ? '' : ' rm-same'}">
+      <td class="col-ord">${a.ord}</td>
+      <td class="col-rule">${a.source_seqs.map((q) => `<span class="src-tag">#${q}</span>`).join('')}
+        <div class="meta">${a.group === 'range' ? '区间内·等比重排' : '区间后·整体平移'}</div></td>
+      <td class="col-tc">${esc(a.old_timecode)}</td>
+      <td class="col-arrow">→</td>
+      <td class="col-tc"><b>${esc(a.new_timecode)}</b>${a.changed ? '' : '<div class="meta">时码未变</div>'}</td>
+    </tr>`).join('');
+  html += `<div class="qc-section">
+    <h4>受影响片段新旧时码（${p.affected.length}）</h4>
+    <table class="qc-table rm-table"><thead><tr>
+      <th class="col-ord">片段#</th><th class="col-rule">来源 / 处理</th>
+      <th class="col-tc">旧时码</th><th class="col-arrow"></th><th class="col-tc">新时码</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    <p class="meta">提示：时码实际变化的片段，其旧质检豁免将失效、旧质检报告会标记失效；时码未变的片段不受影响。</p>
+  </div>`;
+
+  $('#rmResult').innerHTML = html;
+  $('#rmCommit').disabled = !p.can_commit;
+}
+
+$('#rmCommit').onclick = async () => {
+  const p = remapState.plan;
+  if (!p) return;
+  try {
+    const r = await api(`/api/branches/${state.branchId}/remap/commit`, {
+      method: 'POST',
+      body: {
+        source_start: p.source_start,
+        source_end: p.source_end,
+        new_start_ms: p.new_start_ms,
+        new_end_ms: p.new_end_ms,
+        preview_token: p.preview_token
+      }
+    });
+    $('#dlgRemap').close();
+    toast(`区间重排已提交：受影响 ${r.affected_count} 条，时码实际变化 ${r.changed_count} 条`, 'ok');
+    await selectBranch(state.branchId);
+  } catch (e) {
+    remapState.plan = null;
+    $('#rmCommit').disabled = true;
+    const issues = (e.data && e.data.issues) || [];
+    const lines = issues.length
+      ? issues.map((i) => `${i.ord ? `片段 #${i.ord}：` : ''}${i.message}`)
+      : [e.message];
+    if (e.data && e.data.preview_stale) {
+      $('#rmResult').innerHTML = '';
+      $('#rmSpan').textContent = '';
+    }
+    showRemapErrors(lines);
+  }
+};
 
 // ---------------- 启动 ----------------
 
